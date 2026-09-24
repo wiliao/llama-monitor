@@ -4,12 +4,26 @@ pub struct LlamaMetrics {
     pub generation_tokens_per_sec: f64,
     pub prompt_tokens_total: u64,
     pub predicted_tokens_total: u64,
+    /// Tokens currently held in the context (from `/slots`), i.e. the size of the
+    /// conversation the server is working on.
     pub kv_cache_tokens: u64,
     pub kv_cache_max: u64,
+    /// `llamacpp:n_tokens_max` — the largest context seen since the server
+    /// started. Monotonic, so it is a *peak*, not current usage.
+    pub kv_cache_peak: u64,
     pub slots_idle: u32,
     pub slots_processing: u32,
     pub requests_processing: u32,
     pub status: String,
+    // Live progress of the in-flight request (all zero when idle). These are the
+    // only llama.cpp values that move *during* a turn: the two `*_per_sec` gauges
+    // above are last-completed-request snapshots and sit still while generating.
+    pub id_task: u64,
+    pub prompt_tokens: u64,
+    pub prompt_tokens_processed: u64,
+    pub prompt_tokens_cached: u64,
+    /// Tokens decoded so far by the in-flight task (`next_token[0].n_decoded`).
+    pub gen_tokens: u64,
 }
 
 #[derive(Debug, Clone, Default)]

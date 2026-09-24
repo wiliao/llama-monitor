@@ -81,6 +81,7 @@ async fn main() -> Result<()> {
 
     // Detect and start GPU poller
     let backend = gpu::detect_backend(&app_config.gpu_backend);
+    println!("[info] GPU backend: {}", backend.name());
     {
         let gpu = state.gpu_metrics.clone();
         thread::spawn(move || {

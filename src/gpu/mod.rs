@@ -2,6 +2,7 @@ pub mod dummy;
 pub mod env;
 pub mod nvidia;
 pub mod rocm;
+pub mod sysfs;
 
 use anyhow::Result;
 use std::collections::BTreeMap;
@@ -21,7 +22,6 @@ pub struct GpuMetrics {
 
 pub trait GpuBackend: Send + Sync + 'static {
     fn read_metrics(&self) -> Result<BTreeMap<String, GpuMetrics>>;
-    #[allow(dead_code)]
     fn name(&self) -> &str;
 }
 
@@ -52,12 +52,19 @@ impl GpuBackend for MultiBackend {
 pub fn detect_backend(force: &str) -> Arc<dyn GpuBackend> {
     match force {
         "rocm" => Arc::new(rocm::RocmBackend),
+        "sysfs" | "amd" | "amdgpu" => Arc::new(sysfs::SysfsBackend),
         "nvidia" => Arc::new(nvidia::NvidiaBackend),
         "none" => Arc::new(dummy::DummyBackend),
-        // "auto" / "all" / anything else: monitor every vendor whose tool is present
+        // "auto" / "all" / anything else: monitor every vendor we can reach
         _ => {
             let mut backends: Vec<Arc<dyn GpuBackend>> = Vec::new();
-            if command_exists("rocm-smi") {
+            // AMD first, via sysfs when possible: those are the same counters
+            // rocm-smi reports, read from the kernel with no ROCm userspace and
+            // no subprocess. rocm-smi stays as the fallback for setups where the
+            // amdgpu sysfs nodes are absent.
+            if sysfs::amd_cards_present() {
+                backends.push(Arc::new(sysfs::SysfsBackend));
+            } else if command_exists("rocm-smi") {
                 backends.push(Arc::new(rocm::RocmBackend));
             }
             if command_exists("nvidia-smi") {
@@ -65,7 +72,9 @@ pub fn detect_backend(force: &str) -> Arc<dyn GpuBackend> {
             }
             match backends.len() {
                 0 => {
-                    eprintln!("[warn] No GPU monitoring tool found (rocm-smi / nvidia-smi)");
+                    eprintln!(
+                        "[warn] No GPU backend available (amdgpu sysfs / rocm-smi / nvidia-smi)"
+                    );
                     Arc::new(dummy::DummyBackend)
                 }
                 1 => backends.into_iter().next().unwrap(),

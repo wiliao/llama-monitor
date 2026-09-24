@@ -31,12 +31,15 @@ Web dashboard for managing [llama.cpp](https://github.com/ggerganov/llama.cpp) s
 
 ## Supported Hardware
 
-| Vendor | Tool | Detection |
-|--------|------|-----------|
-| AMD | `rocm-smi` | Auto-detected |
+| Vendor | Source | Detection |
+|--------|--------|-----------|
+| AMD | amdgpu sysfs (`/sys/class/drm/card*/device`) | Auto-detected — no ROCm userspace needed |
+| AMD (fallback) | `rocm-smi` | Auto-detected when the sysfs nodes are absent |
 | NVIDIA | `nvidia-smi` | Auto-detected |
 
-GPU backend is auto-detected at startup. Override with `--gpu-backend rocm|nvidia|none`.
+GPU backend is auto-detected at startup. Override with `--gpu-backend sysfs|rocm|nvidia|none`.
+
+The AMD backend reads the same kernel counters `rocm-smi` wraps (temperature, power, load, VRAM, DPM clocks) straight from sysfs, so it needs no ROCm installation, spawns no subprocess, and works identically whether llama.cpp runs on Vulkan or ROCm. **Vulkan cannot be used for this**: the Vulkan API exposes static device properties only — no sensors, utilization or *used* VRAM. AMD cards are matched by PCI vendor ID, never by `cardN`, because DRM numbering is not stable across reboots.
 
 ## Installation
 
@@ -55,7 +58,7 @@ The binary is at `target/release/llama-monitor`. It's a single self-contained ex
 ### Dependencies
 
 - **llama.cpp** -- `llama-server` binary (with `--metrics` and `--jinja` support)
-- **GPU monitoring** (optional) -- `rocm-smi` (AMD) or `nvidia-smi` (NVIDIA)
+- **GPU monitoring** (optional) -- amdgpu sysfs (AMD, built in — no extra package), `rocm-smi` (AMD fallback) or `nvidia-smi` (NVIDIA)
 
 ## Quick Start
 
@@ -79,8 +82,8 @@ Open `http://localhost:7778` in your browser. Click the gear icon to configure s
 | `--llama-server-cwd` | | `.` | Working directory for llama-server |
 | `--port` | `-p` | `7778` | Monitor web UI port |
 | `--presets-file` | | `~/.config/llama-monitor/presets.json` | Custom presets file location |
-| `--gpu-backend` | | `auto` | Force GPU backend: `auto`, `rocm`, `nvidia`, `none` |
-| `--gpu-arch` | | (from config) | GPU architecture for ROCm (e.g. `gfx906`, `gfx1100`, `auto`) |
+| `--gpu-backend` | | `auto` | Force GPU backend: `auto`, `sysfs`/`amd` (AMD via amdgpu sysfs), `rocm`, `nvidia`, `none` |
+| `--gpu-arch` | | (from config) | GPU architecture for the ROCm launch-env panel (e.g. `gfx906`, `gfx1100`, `auto`) — telemetry is unaffected |
 | `--gpu-devices` | | (from config) | Visible GPU device indices (e.g. `0,1,2,3`) |
 
 All paths can also be configured from the web UI via the Configuration modal (gear icon). UI settings override CLI defaults and persist to `~/.config/llama-monitor/ui-settings.json`.
@@ -137,7 +140,8 @@ src/
   state.rs             -- Shared AppState (Arc<Mutex<...>>), UiSettings persistence
   gpu/
     mod.rs             -- GpuMetrics, GpuBackend trait, auto-detection
-    rocm.rs            -- AMD ROCm via rocm-smi JSON
+    sysfs.rs           -- AMD via amdgpu sysfs (no ROCm needed)
+    rocm.rs            -- AMD ROCm via rocm-smi JSON (fallback)
     nvidia.rs          -- NVIDIA via nvidia-smi CSV
     env.rs             -- GPU environment config, architecture table
     dummy.rs           -- No-op backend for headless/testing
@@ -166,7 +170,7 @@ static/
 ### Data Flow
 
 ```
-GPU (rocm-smi/nvidia-smi)  -->  GPU Poller (500ms)  --> AppState
+GPU (amdgpu sysfs/rocm-smi/nvidia-smi)  -->  GPU Poller (500ms)  --> AppState
 llama-server /metrics       -->  Llama Poller (1s)   --> AppState
                                                          |
                                                     WebSocket (500ms)

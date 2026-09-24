@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::process::Command;
 
 use super::{GpuBackend, GpuMetrics};
@@ -18,6 +19,7 @@ impl GpuBackend for RocmBackend {
                 "--showmaxpower",
                 "--showmeminfo",
                 "vram",
+                "--showproductname",
             ])
             .output()
             .map_err(|e| anyhow::anyhow!("failed to run rocm-smi: {e}"))?;
@@ -30,12 +32,80 @@ impl GpuBackend for RocmBackend {
         let json: serde_json::Value = serde_json::from_slice(&output.stdout)
             .map_err(|e| anyhow::anyhow!("failed to parse rocm-smi JSON: {e}"))?;
 
-        parse_rocm_json(&json)
+        let metrics = parse_rocm_json(&json)?;
+
+        // Enrich each card while we still hold rocm-smi's raw object key:
+        //  - fill a power cap that `--showmaxpower` reported as 0.0 (sysfs has it)
+        //  - prefer the marketing name over that key, so the UI reads
+        //    "AMD Radeon RX 7900 XTX" instead of "card0"
+        let mut enriched = BTreeMap::new();
+        for (rocm_key, mut m) in metrics {
+            if m.power_limit == 0
+                && let Some(cap) = sysfs_power_cap_w(&rocm_key)
+            {
+                m.power_limit = cap;
+            }
+
+            let display_name = json
+                .get(&rocm_key)
+                .and_then(|card| card.get("Card Series"))
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty() && *s != "N/A")
+                .unwrap_or(rocm_key.as_str())
+                .to_string();
+
+            enriched.insert(display_name, m);
+        }
+
+        Ok(enriched)
     }
 
     fn name(&self) -> &str {
         "rocm"
     }
+}
+
+/// Power cap from sysfs, in watts.
+///
+/// `rocm_key` is rocm-smi's object key (`card0`, `card1`, …) — a ROCm index, not
+/// a DRM node. AMD cards are matched by **vendor ID**, never by a hardcoded
+/// `cardN`: DRM numbering is not stable across reboots or between hosts.
+fn sysfs_power_cap_w(rocm_key: &str) -> Option<u32> {
+    let index: usize = rocm_key.strip_prefix("card")?.parse().ok()?;
+
+    let mut amd_cards: Vec<PathBuf> = std::fs::read_dir("/sys/class/drm")
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            let is_card = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_prefix("card"))
+                .map(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+                .unwrap_or(false);
+            is_card
+                && std::fs::read_to_string(path.join("device/vendor"))
+                    .map(|v| v.trim() == "0x1002")
+                    .unwrap_or(false)
+        })
+        .collect();
+    amd_cards.sort();
+
+    let device = amd_cards.get(index)?.join("device");
+    let hwmon = std::fs::read_dir(device.join("hwmon"))
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .next()?;
+
+    let microwatts: u64 = std::fs::read_to_string(hwmon.join("power1_cap_max"))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    Some((microwatts / 1_000_000) as u32)
 }
 
 pub fn parse_rocm_json(json: &serde_json::Value) -> Result<BTreeMap<String, GpuMetrics>> {

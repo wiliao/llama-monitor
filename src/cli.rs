@@ -27,11 +27,11 @@ pub struct AppArgs {
     #[arg(long)]
     pub presets_file: Option<PathBuf>,
 
-    /// GPU monitoring backend: auto (all detected vendors), rocm, nvidia, none
+    /// GPU monitoring backend: auto (all detected vendors), sysfs|amd (AMD via amdgpu sysfs, no ROCm), rocm (AMD via rocm-smi), nvidia, none
     #[arg(long, default_value = "auto")]
     pub gpu_backend: String,
 
-    /// GPU architecture for ROCm env (e.g. gfx906, gfx1100, auto)
+    /// GPU architecture for ROCm env (e.g. gfx906, gfx1100, auto) — only used by the ROCm launch-env panel
     #[arg(long)]
     pub gpu_arch: Option<String>,
 

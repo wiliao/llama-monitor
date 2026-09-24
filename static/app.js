@@ -601,18 +601,30 @@ async function doStop() {
     await fetch('/api/stop', { method: 'POST' });
 }
 
-// WebSocket
-const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+// WebSocket — reconnects on its own, so restarting llama-monitor (or a laptop
+// sleep, or a network blip) does not leave the dashboard frozen on stale
+// numbers while the status text quietly reads "Disconnected".
+let ws = null;
+let wsRetryMs = 1000;
+const WS_RETRY_MAX_MS = 15000;
+
+function connectWebSocket() {
+ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+ws.onopen = () => { wsRetryMs = 1000; };   // healthy again: reset the backoff
 ws.onmessage = e => {
     const d = JSON.parse(e.data);
 
-    // Server state
+    // Server state. `server_running` is only the dashboard's OWN child process;
+    // the systemd service is outside our control, so fall back to the health
+    // probe — otherwise the header reads "Stopped" while Codex is being served.
     serverRunning = d.server_running;
+    const healthy = !!(d.llama && d.llama.status === 'ok');
+    const active = serverRunning || healthy;
     const dot = document.getElementById('status-dot');
     const txt = document.getElementById('status-text');
-    dot.className = 'status-dot ' + (serverRunning ? 'running' : 'stopped');
-    txt.textContent = serverRunning ? 'Running' : 'Stopped';
-    document.getElementById('btn-start').disabled = serverRunning;
+    dot.className = 'status-dot ' + (active ? 'running' : 'stopped');
+    txt.textContent = serverRunning ? 'Running' : (healthy ? 'Running (external)' : 'Stopped');
+    document.getElementById('btn-start').disabled = active;
     document.getElementById('btn-stop').disabled = !serverRunning;
 
     // Inference
@@ -621,11 +633,34 @@ ws.onmessage = e => {
     document.getElementById('m-gen').textContent = l.generation_tokens_per_sec > 0 ? l.generation_tokens_per_sec.toFixed(1) + ' t/s' : '\u2014';
     if (l.kv_cache_max > 0) {
         const pct = ((l.kv_cache_tokens / l.kv_cache_max) * 100).toFixed(1);
-        document.getElementById('m-ctx').textContent = l.kv_cache_tokens + ' / ' + l.kv_cache_max + ' (' + pct + '%)';
+        let ctxTxt = l.kv_cache_tokens + ' / ' + l.kv_cache_max + ' (' + pct + '%)';
+        // The server's own n_tokens_max is a monotonic high-water mark, so show it
+        // separately instead of passing it off as current usage.
+        if (l.kv_cache_peak > l.kv_cache_tokens) ctxTxt += ' \u00b7 peak ' + l.kv_cache_peak;
+        document.getElementById('m-ctx').textContent = ctxTxt;
     } else {
         document.getElementById('m-ctx').textContent = '\u2014';
     }
     document.getElementById('m-slots').textContent = l.slots_idle + l.slots_processing > 0 ? l.slots_idle + ' idle / ' + l.slots_processing + ' busy' : '\u2014';
+
+    // Current request — the only inference value that moves during a turn.
+    // /slots' n_prompt_tokens_processed counts only the *uncached* part of the
+    // prompt, so progress is done/total-minus-cached, not done/total. Once
+    // decoding starts, next_token[0].n_decoded gives the live token count.
+    const cur = document.getElementById('m-current');
+    if (l.slots_processing > 0) {
+        const toProcess = Math.max((l.prompt_tokens || 0) - (l.prompt_tokens_cached || 0), 0);
+        if (l.gen_tokens > 0) {
+            cur.textContent = 'task ' + l.id_task + ' \u00b7 ' + l.gen_tokens + ' tokens';
+        } else if (toProcess > 0 && l.prompt_tokens_processed < toProcess) {
+            const pct = ((l.prompt_tokens_processed / toProcess) * 100).toFixed(0);
+            cur.textContent = 'prompt ' + l.prompt_tokens_processed + '/' + toProcess + ' (' + pct + '%)';
+        } else {
+            cur.textContent = l.id_task > 0 ? 'task ' + l.id_task + ' \u00b7 starting' : 'busy';
+        }
+    } else {
+        cur.textContent = '\u2014';
+    }
 
     const statusEl = document.getElementById('m-status');
     statusEl.textContent = l.status || '\u2014';
@@ -661,7 +696,7 @@ ws.onmessage = e => {
 
     // Tab badges
     const badgeParts = [];
-    if (serverRunning) badgeParts.push('Running');
+    if (active) badgeParts.push('Running');
     if (l.generation_tokens_per_sec > 0) badgeParts.push(l.generation_tokens_per_sec.toFixed(1) + 't/s');
     const gpuEntries = Object.entries(d.gpu);
     if (gpuEntries.length > 0) badgeParts.push(Math.max(...gpuEntries.map(([,m]) => m.temp)).toFixed(0) + 'C');
@@ -671,7 +706,14 @@ ws.onmessage = e => {
     document.getElementById('badge-logs').textContent = logs.length > 0 ? ' ' + logs.length : '';
 };
 ws.onerror = e => console.error('WebSocket error:', e);
-ws.onclose = () => { document.getElementById('status-text').textContent = 'Disconnected'; };
+ws.onclose = () => {
+    document.getElementById('status-text').textContent = 'Disconnected \u2014 reconnecting\u2026';
+    setTimeout(connectWebSocket, wsRetryMs);
+    wsRetryMs = Math.min(wsRetryMs * 2, WS_RETRY_MAX_MS);
+};
+}
+
+connectWebSocket();
 
 // Markdown
 if (typeof marked !== 'undefined') {
