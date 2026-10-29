@@ -7,10 +7,21 @@ use super::metrics::parse_prometheus_metrics;
 const LLAMA_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 pub async fn llama_metrics_poller(state: AppState) {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()
-        .unwrap();
+    // llama.cpp may be started with --api-key; /health stays public but /metrics
+    // and /slots answer 401 without it. Read the key from the environment so the
+    // dashboard can attach to a protected server (LLAMA_MONITOR_API_KEY).
+    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(3));
+    if let Ok(key) = std::env::var("LLAMA_MONITOR_API_KEY") {
+        if !key.is_empty() {
+            let mut headers = reqwest::header::HeaderMap::new();
+            if let Ok(mut value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {key}")) {
+                value.set_sensitive(true);
+                headers.insert(reqwest::header::AUTHORIZATION, value);
+            }
+            builder = builder.default_headers(headers);
+        }
+    }
+    let client = builder.build().unwrap();
 
     // Cumulative counters from the previous poll. Kept across iterations so the
     // completion-time counter bump can be turned into a per-request rate.
