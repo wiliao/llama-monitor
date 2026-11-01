@@ -146,12 +146,12 @@ fn card_name(card_dir: &Path, device: &Path) -> String {
 fn known_name(pci_id: &str) -> Option<&'static str> {
     let device = pci_id.split(':').nth(1)?;
     let table: &[(&str, &str)] = &[
-        ("744c", "AMD Radeon RX 7900 XTX"), // Navi 31
+        ("744c", "AMD Radeon RX 7900 XTX"),         // Navi 31
         ("73bf", "AMD Radeon RX 6800/6900 series"), // Navi 21
-        ("73df", "AMD Radeon RX 6700 series"), // Navi 22
-        ("73ff", "AMD Radeon RX 6600 series"), // Navi 23
-        ("731f", "AMD Radeon RX 5700 series"), // Navi 10
-        ("67df", "AMD Radeon RX 470/480/570/580"), // Polaris 10
+        ("73df", "AMD Radeon RX 6700 series"),      // Navi 22
+        ("73ff", "AMD Radeon RX 6600 series"),      // Navi 23
+        ("731f", "AMD Radeon RX 5700 series"),      // Navi 10
+        ("67df", "AMD Radeon RX 470/480/570/580"),  // Polaris 10
     ];
     table
         .iter()
@@ -238,8 +238,7 @@ pub fn parse_active_clock(table: &str) -> u32 {
     let before_marker = line.split('*').next().unwrap_or(line);
     before_marker
         .split(|c: char| !c.is_ascii_digit())
-        .filter(|part| !part.is_empty())
-        .next_back()
+        .rfind(|part| !part.is_empty())
         .and_then(|mhz| mhz.parse().ok())
         .unwrap_or(0)
 }
@@ -316,10 +315,8 @@ mod tests {
     /// Build a throwaway DRM tree. Cards are written as real sysfs does:
     /// `cardN/device/{vendor,uevent,...}` plus `device/hwmon/hwmonX/…`.
     fn fixture_root(tag: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "llama-monitor-sysfs-{tag}-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("llama-monitor-sysfs-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         root
@@ -340,7 +337,10 @@ mod tests {
         write(device.join("gpu_busy_percent"), "87\n");
         write(device.join("mem_info_vram_used"), "21455732736\n");
         write(device.join("mem_info_vram_total"), "25753026560\n");
-        write(device.join("pp_dpm_sclk"), "S: 0Mhz *\n1: 500Mhz \n2: 2371Mhz \n");
+        write(
+            device.join("pp_dpm_sclk"),
+            "S: 0Mhz *\n1: 500Mhz \n2: 2371Mhz \n",
+        );
         write(
             device.join("pp_dpm_mclk"),
             "0: 96Mhz \n1: 456Mhz \n2: 772Mhz \n3: 1249Mhz *\n",
@@ -458,7 +458,10 @@ mod tests {
         let line = "29:00.0 \"VGA compatible controller\" \"Advanced Micro Devices, Inc. [AMD/ATI]\" \"Navi 31 [Radeon RX 7900 XT/7900 XTX/7900 GRE/7900M]\" -rc8 -p00 \"Sapphire Technology Limited\" \"PULSE RX 7900 XTX\"";
         let fields = parse_quoted_fields(line);
         assert_eq!(fields[0], "29:00.0");
-        assert_eq!(fields[3], "Navi 31 [Radeon RX 7900 XT/7900 XTX/7900 GRE/7900M]");
+        assert_eq!(
+            fields[3],
+            "Navi 31 [Radeon RX 7900 XT/7900 XTX/7900 GRE/7900M]"
+        );
         assert_eq!(fields[7], "PULSE RX 7900 XTX");
     }
 }

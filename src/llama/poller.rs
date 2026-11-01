@@ -16,15 +16,15 @@ pub async fn llama_metrics_poller(state: AppState) {
     // and /slots answer 401 without it. Read the key from the environment so the
     // dashboard can attach to a protected server (LLAMA_MONITOR_API_KEY).
     let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(3));
-    if let Ok(key) = std::env::var("LLAMA_MONITOR_API_KEY") {
-        if !key.is_empty() {
-            let mut headers = reqwest::header::HeaderMap::new();
-            if let Ok(mut value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {key}")) {
-                value.set_sensitive(true);
-                headers.insert(reqwest::header::AUTHORIZATION, value);
-            }
-            builder = builder.default_headers(headers);
+    if let Ok(key) = std::env::var("LLAMA_MONITOR_API_KEY")
+        && !key.is_empty()
+    {
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Ok(mut value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {key}")) {
+            value.set_sensitive(true);
+            headers.insert(reqwest::header::AUTHORIZATION, value);
         }
+        builder = builder.default_headers(headers);
     }
     let client = builder.build().unwrap();
 
