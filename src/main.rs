@@ -5,6 +5,7 @@ mod llama;
 mod models;
 mod presets;
 mod state;
+mod system;
 mod web;
 
 use anyhow::Result;
@@ -14,6 +15,7 @@ use std::thread;
 use std::time::Duration;
 
 const GPU_POLL_INTERVAL: Duration = Duration::from_millis(500);
+const SYSTEM_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -91,6 +93,22 @@ async fn main() -> Result<()> {
                     Err(e) => eprintln!("[error] GPU metrics: {e}"),
                 }
                 thread::sleep(GPU_POLL_INTERVAL);
+            }
+        });
+    }
+
+    // Host CPU / RAM / temperature poller
+    {
+        let sys = state.system_metrics.clone();
+        thread::spawn(move || {
+            let mut sampler = system::SystemSampler::default();
+            // Prime the delta so the first websocket push already carries a real
+            // utilisation figure instead of an em dash for a second.
+            sampler.sample();
+            thread::sleep(Duration::from_millis(200));
+            loop {
+                *sys.lock().unwrap() = sampler.sample();
+                thread::sleep(SYSTEM_POLL_INTERVAL);
             }
         });
     }

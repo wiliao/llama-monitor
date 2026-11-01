@@ -3,8 +3,13 @@ use std::time::{Duration, Instant};
 use crate::state::AppState;
 
 use super::metrics::parse_prometheus_metrics;
+use super::model_info::ModelInfo;
 
 const LLAMA_POLL_INTERVAL: Duration = Duration::from_secs(1);
+
+/// The loaded model does not change while a server runs, so its identity is
+/// refreshed on a slow cadence rather than on every tick.
+const MODEL_INFO_REFRESH: Duration = Duration::from_secs(5);
 
 pub async fn llama_metrics_poller(state: AppState) {
     // llama.cpp may be started with --api-key; /health stays public but /metrics
@@ -29,6 +34,7 @@ pub async fn llama_metrics_poller(state: AppState) {
     // Previous /slots reading of the in-flight task: (task, prompt processed,
     // decoded, when) — used to derive live per-second rates.
     let mut last_slot_sample: Option<(u64, u64, u64, Instant)> = None;
+    let mut last_model_refresh: Option<Instant> = None;
 
     loop {
         // Determine port: from config if started via UI, else default 8080
@@ -68,12 +74,21 @@ pub async fn llama_metrics_poller(state: AppState) {
                 let mut m = state.llama_metrics.lock().unwrap();
                 *m = super::metrics::LlamaMetrics::default();
             }
+            // The model identity belongs to the process that just went away.
+            *state.model_info.lock().unwrap() = ModelInfo::default();
             // Counters restart with the server; a stale baseline would make the
             // first deltas negative and skip a request.
             previous_counters = None;
             last_slot_sample = None;
+            last_model_refresh = None;
             tokio::time::sleep(LLAMA_POLL_INTERVAL).await;
             continue;
+        }
+
+        // Model identity — cheap, but far too static to poll every second.
+        if last_model_refresh.is_none_or(|at| at.elapsed() >= MODEL_INFO_REFRESH) {
+            refresh_model_info(&client, &base, &state).await;
+            last_model_refresh = Some(Instant::now());
         }
 
         // Poll /metrics
@@ -233,5 +248,43 @@ pub async fn llama_metrics_poller(state: AppState) {
         }
 
         tokio::time::sleep(LLAMA_POLL_INTERVAL).await;
+    }
+}
+
+/// Identify the model the server has loaded.
+///
+/// `/props` supplies the alias, quantisation, running context size, slot count
+/// and build; `/v1/models` carries the GGUF metadata (parameter count, file
+/// size, trained context, vocabulary). Neither is present in `/metrics`, which
+/// is why the dashboard knew nothing about the model itself. Both are treated
+/// as optional so an older llama.cpp build simply leaves fields empty.
+async fn refresh_model_info(client: &reqwest::Client, base: &str, state: &AppState) {
+    let mut info = ModelInfo::default();
+
+    if let Ok(resp) = client.get(format!("{base}/props")).send().await
+        && let Ok(body) = resp.text().await
+        && let Ok(props) = serde_json::from_str::<serde_json::Value>(&body)
+    {
+        info.apply_props(&props);
+    }
+
+    if let Ok(resp) = client.get(format!("{base}/v1/models")).send().await
+        && let Ok(body) = resp.text().await
+        && let Ok(models) = serde_json::from_str::<serde_json::Value>(&body)
+    {
+        info.apply_models(&models);
+    }
+
+    // Older builds omit the file size from the model metadata; the file on disk
+    // is the same number. A path that is not locally readable (container, remote
+    // mount) just leaves it at zero.
+    if info.size_bytes == 0 && !info.path.is_empty() {
+        info.size_bytes = std::fs::metadata(&info.path).map(|m| m.len()).unwrap_or(0);
+    }
+
+    // Keep the previous identity if this round learned nothing: an endpoint that
+    // briefly 404s must not blank a panel that was correct a second ago.
+    if info.is_loaded() {
+        *state.model_info.lock().unwrap() = info;
     }
 }

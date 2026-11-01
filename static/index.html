@@ -58,6 +58,50 @@
             <div class="metric-card"><div class="metric-label">Current Request</div><div class="metric-value" id="m-current">&mdash;</div></div>
             <div class="metric-card"><div class="metric-label">Server Status</div><div class="metric-value" id="m-status">&mdash;</div></div>
         </div>
+        <h2>Model</h2>
+        <div class="model-card" id="model-card">
+            <div class="model-head">
+                <span class="model-name idle" id="m-model-name">&mdash;</span>
+                <span class="model-badges" id="m-model-badges"></span>
+            </div>
+            <div class="model-path" id="m-model-path"></div>
+            <div class="model-grid">
+                <div class="model-item"><span class="model-k">Parameters</span><span class="model-v" id="m-model-params">&mdash;</span></div>
+                <div class="model-item"><span class="model-k">File Size</span><span class="model-v" id="m-model-size">&mdash;</span></div>
+                <div class="model-item"><span class="model-k">Context</span><span class="model-v" id="m-model-ctx">&mdash;</span></div>
+                <div class="model-item" id="m-model-train-wrap"><span class="model-k">Trained Ctx</span><span class="model-v" id="m-model-train">&mdash;</span></div>
+                <div class="model-item"><span class="model-k">Slots</span><span class="model-v" id="m-model-slots">&mdash;</span></div>
+                <div class="model-item"><span class="model-k">Vocab</span><span class="model-v" id="m-model-vocab">&mdash;</span></div>
+                <div class="model-item"><span class="model-k">Build</span><span class="model-v" id="m-model-build">&mdash;</span></div>
+            </div>
+        </div>
+
+        <h2>Host</h2>
+        <div class="inference-panel" id="host">
+            <div class="metric-card">
+                <div class="metric-label">CPU</div>
+                <div class="metric-value cpu" id="m-cpu">&mdash;</div>
+                <div class="meter"><div class="meter-fill" id="m-cpu-bar"></div></div>
+                <div class="metric-sub" id="m-cpu-sub">&mdash;</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">RAM</div>
+                <div class="metric-value ram" id="m-ram">&mdash;</div>
+                <div class="meter"><div class="meter-fill" id="m-ram-bar"></div></div>
+                <div class="metric-sub" id="m-ram-sub">&mdash;</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Swap</div>
+                <div class="metric-value swap" id="m-swap">&mdash;</div>
+                <div class="meter"><div class="meter-fill" id="m-swap-bar"></div></div>
+                <div class="metric-sub" id="m-swap-sub">&mdash;</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">CPU Temp</div>
+                <div class="metric-value temp" id="m-cpu-temp">&mdash;</div>
+                <div class="metric-sub" id="m-cpu-temp-sub">&mdash;</div>
+            </div>
+        </div>
         <h2>GPUs</h2>
         <div class="table-wrap">
         <table class="gpu-table">

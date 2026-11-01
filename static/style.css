@@ -55,6 +55,34 @@ h2 { font-size: 1.1rem; color: #81a1c1; margin: 16px 0 8px 0; }
 .metric-value.status-busy { color: #ebcb8b; }
 .metric-value.status-err { color: #bf616a; }
 
+/* Host metrics (CPU / RAM / swap / CPU temp) */
+#host .metric-card { flex: 1 1 160px; }
+.metric-value.cpu { color: #81a1c1; }
+.metric-value.ram { color: #b48ead; }
+.metric-value.swap { color: #d08770; }
+.metric-value.temp { color: #bf616a; }
+.metric-value.idle-value { color: #6a7585; }
+.metric-sub { font-size: 0.72rem; color: #8899aa; margin-top: 6px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meter { height: 6px; border-radius: 3px; background: #2e3440; overflow: hidden; margin-top: 8px; }
+.meter-fill { height: 100%; width: 0; border-radius: 3px; background: #88c0d1; transition: width 0.35s ease, background-color 0.35s ease; }
+.meter-fill.warn { background: #ebcb8b; }
+.meter-fill.hot { background: #bf616a; }
+
+/* Model identity — static metadata pulled from the running llama-server */
+.model-card { background: #3b4252; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
+.model-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.model-name { font-family: monospace; font-size: 1.05rem; font-weight: 600; color: #88c0d1; overflow-wrap: anywhere; }
+.model-name.idle { color: #6a7585; }
+.model-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.model-badge { font-family: monospace; font-size: 0.68rem; padding: 1px 8px; border-radius: 10px; background: #434c5e; color: #d8dee9; }
+.model-badge.vision { background: #4a4a5f; color: #b48ead; }
+.model-path { font-family: monospace; font-size: 0.72rem; color: #6a7585; margin-top: 4px; overflow-wrap: anywhere; }
+.model-path:empty { display: none; }
+.model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px 16px; margin-top: 12px; }
+.model-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.model-k { font-size: 0.68rem; color: #8899aa; text-transform: uppercase; letter-spacing: 0.5px; }
+.model-v { font-family: monospace; font-size: 0.88rem; color: #d8dee9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* Logs */
 .log-panel { background: #272c35; border-radius: 8px; padding: 10px; flex: 1; min-height: 120px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; line-height: 1.5; color: #a0aab5; white-space: pre-wrap; word-break: break-all; }
 
@@ -109,7 +137,12 @@ h2 { font-size: 1.1rem; color: #81a1c1; margin: 16px 0 8px 0; }
     .btn { padding: 8px 14px; flex-shrink: 0; }
     .inference-panel { gap: 8px; }
     .metric-card { padding: 8px 12px; min-width: 0; flex: 1 1 calc(50% - 8px); }
+    #host .metric-card { flex: 1 1 calc(50% - 8px); }
     .metric-value { font-size: 1rem; }
+    .metric-sub { font-size: 0.68rem; }
+    .model-card { padding: 10px 12px; }
+    .model-name { font-size: 0.95rem; }
+    .model-grid { grid-template-columns: repeat(2, 1fr); gap: 8px 12px; }
     .gpu-table th, .gpu-table td { padding: 6px 6px; font-size: 0.8rem; }
     .log-panel { min-height: 100px; font-size: 0.72rem; }
     .msg { max-width: 100%; font-size: 0.85rem; }

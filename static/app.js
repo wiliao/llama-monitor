@@ -666,6 +666,12 @@ ws.onmessage = e => {
     statusEl.textContent = l.status || '\u2014';
     statusEl.className = 'metric-value ' + (l.status === 'ok' ? 'status-ok' : l.status === 'no slot available' ? 'status-busy' : 'status-err');
 
+    // Model identity — static per server run, so it only changes on restart
+    renderModel(d.model);
+
+    // Host CPU / RAM / swap — the machine, not the GPUs
+    renderHost(d.system);
+
     // GPU table
     const tbody = document.getElementById('gpu-rows');
     tbody.innerHTML = Object.entries(d.gpu).map(([card, m]) => {
@@ -714,6 +720,112 @@ ws.onclose = () => {
 }
 
 connectWebSocket();
+
+// --- Model & host rendering ---
+
+const DASH = '\u2014';
+
+function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Binary units, matching how the preset browser reports model file sizes.
+function fmtBytes(bytes) {
+    if (bytes === null || bytes === undefined) return DASH;
+    if (bytes <= 0) return '0 GB';
+    const gb = bytes / 1073741824;
+    if (gb >= 100) return gb.toFixed(0) + ' GB';
+    if (gb >= 1) return gb.toFixed(1) + ' GB';
+    return Math.round(bytes / 1048576) + ' MB';
+}
+
+function fmtCount(n) {
+    if (!n) return DASH;
+    if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T';
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    return String(n);
+}
+
+function fmtTokens(n) {
+    return n > 0 ? n.toLocaleString('en-US') : DASH;
+}
+
+function renderModel(m) {
+    m = m || {};
+    const nameEl = document.getElementById('m-model-name');
+    nameEl.textContent = m.name || DASH;
+    // Keep the placeholder muted rather than painting it in the accent colour.
+    nameEl.classList.toggle('idle', !m.name);
+
+    const badges = [];
+    if (m.quant) badges.push('<span class="model-badge">' + esc(m.quant) + '</span>');
+    if (m.vision) badges.push('<span class="model-badge vision">vision</span>');
+    document.getElementById('m-model-badges').innerHTML = badges.join('');
+
+    const pathEl = document.getElementById('m-model-path');
+    const path = m.path || '';
+    if (pathEl.textContent !== path) {
+        pathEl.textContent = path;
+        pathEl.title = path;
+    }
+
+    document.getElementById('m-model-params').textContent = fmtCount(m.params);
+    document.getElementById('m-model-size').textContent = m.size_bytes > 0 ? fmtBytes(m.size_bytes) : DASH;
+    document.getElementById('m-model-ctx').textContent = fmtTokens(m.n_ctx);
+
+    // Only worth the space when YaRN scaling is in play (context != trained).
+    const trainWrap = document.getElementById('m-model-train-wrap');
+    const showTrain = !!(m.n_ctx_train && m.n_ctx_train !== m.n_ctx);
+    trainWrap.style.display = showTrain ? '' : 'none';
+    if (showTrain) document.getElementById('m-model-train').textContent = fmtTokens(m.n_ctx_train);
+
+    document.getElementById('m-model-slots').textContent = m.slots > 0 ? String(m.slots) : DASH;
+    document.getElementById('m-model-vocab').textContent = fmtCount(m.n_vocab);
+    document.getElementById('m-model-build').textContent = m.build || DASH;
+}
+
+function setMeter(id, pct) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const p = Math.max(0, Math.min(100, Number(pct) || 0));
+    el.style.width = p.toFixed(1) + '%';
+    el.className = 'meter-fill' + (p >= 90 ? ' hot' : p >= 70 ? ' warn' : '');
+}
+
+function renderHost(s) {
+    s = s || {};
+
+    // CPU: null before the first delta, and on platforms without /proc.
+    const cpu = (s.cpu_usage === null || s.cpu_usage === undefined) ? null : s.cpu_usage;
+    document.getElementById('m-cpu').textContent = cpu === null ? DASH : Math.round(cpu) + '%';
+    setMeter('m-cpu-bar', cpu);
+    const cpuBits = [];
+    if (s.cpu_cores) cpuBits.push(s.cpu_cores + ' cores');
+    if (s.load1 !== null && s.load1 !== undefined) cpuBits.push('load ' + s.load1.toFixed(2));
+    document.getElementById('m-cpu-sub').textContent = cpuBits.join(' \u00b7 ') || DASH;
+
+    // RAM: "used" excludes reclaimable page cache, i.e. what is really
+    // unavailable to a model being loaded.
+    const memPct = s.mem_total > 0 ? (s.mem_used / s.mem_total) * 100 : 0;
+    document.getElementById('m-ram').textContent = s.mem_total > 0 ? Math.round(memPct) + '%' : DASH;
+    setMeter('m-ram-bar', memPct);
+    document.getElementById('m-ram-sub').textContent = s.mem_total > 0 ? fmtBytes(s.mem_used) + ' / ' + fmtBytes(s.mem_total) : DASH;
+
+    // Swap: absent on plenty of machines, which is not an error state.
+    const swapPct = s.swap_total > 0 ? (s.swap_used / s.swap_total) * 100 : 0;
+    const swapEl = document.getElementById('m-swap');
+    swapEl.textContent = s.swap_total > 0 ? Math.round(swapPct) + '%' : 'none';
+    // "none" is a configuration fact, not a hot number — keep it muted.
+    swapEl.classList.toggle('idle-value', !(s.swap_total > 0));
+    setMeter('m-swap-bar', swapPct);
+    document.getElementById('m-swap-sub').textContent = s.swap_total > 0 ? fmtBytes(s.swap_used) + ' / ' + fmtBytes(s.swap_total) : 'not configured';
+
+    // CPU package temperature, when hwmon exposes one.
+    document.getElementById('m-cpu-temp').textContent = (s.cpu_temp === null || s.cpu_temp === undefined) ? DASH : Math.round(s.cpu_temp) + 'C';
+    document.getElementById('m-cpu-temp-sub').textContent = (s.cpu_temp === null || s.cpu_temp === undefined) ? 'no sensor' : 'package';
+}
 
 // Markdown
 if (typeof marked !== 'undefined') {

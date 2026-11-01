@@ -23,6 +23,8 @@ Web dashboard for managing [llama.cpp](https://github.com/ggerganov/llama.cpp) s
 - **Server Management** -- Start/stop llama.cpp server from configurable presets
 - **Real-time GPU Monitoring** -- Temperature, load, VRAM, power, clock speeds (AMD ROCm + NVIDIA)
 - **Inference Metrics** -- Prompt/generation speed, KV cache usage, slot status via Prometheus endpoint
+- **Model Info** -- Name, quantisation, parameter count, file size, context size and llama.cpp build of the loaded model
+- **Host Telemetry** -- CPU utilisation, load average, RAM/swap usage and CPU package temperature
 - **Customizable Presets** -- Create, edit, copy, delete model presets with all llama.cpp parameters; persisted to disk
 - **File Browser** -- Browse the filesystem to select llama-server binary and .gguf model files
 - **Integrated Chat** -- Streaming chat UI with reasoning/thinking block support, proxied to the configured port
